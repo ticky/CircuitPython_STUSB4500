@@ -178,7 +178,7 @@ class STUSB4500:
     def flex_current(self):
       """A float value to set the current common to all PDOs. This value is only used in the power negotiation if the current value for that PDO is set to 0."""
       
-      return ((self.sectors_data[4 * 8 + 4] & 0x0F) << 6) + ((self.sectors_data[4 * 8 + 3] & 0xFC) >> 2) / 100
+      return (((self.sectors_data[4 * 8 + 4] & 0x0F) << 6) + ((self.sectors_data[4 * 8 + 3] & 0xFC) >> 2)) / 100
     
     @property
     def pdo_number(self):
