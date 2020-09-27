@@ -26,8 +26,7 @@ Table of Contents
 .. toctree::
     :caption: Related Products
 
-.. todo:: Add any product links here. If there are none, then simply delete this todo and leave
-    the toctree above for use later.
+    SparkFun STUSB4500 <https://www.sparkfun.com/products/15801>
 
 .. toctree::
     :caption: Other Links
