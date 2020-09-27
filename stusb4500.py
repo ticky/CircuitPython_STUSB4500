@@ -69,19 +69,15 @@ class STUSB4500:
     :param busio.I2C i2c_bus: The I2C bus the STUSB4500 is connected to.
 
     """
-
-    read_sectors = False
+    
     sectors_data = bytearray(8 * 5)
     
     def __init__(self, i2c_bus, address=0x28):
         self.i2c_device = i2cdevice.I2CDevice(i2c_bus, address)
-        
-        if not self.read_sectors:
-          self._read_parameters()
-
+        self._read_parameters()
+    
     def _read_parameters(self):
       """Read current parameters from the device"""
-      self.read_sectors = True
       
       with self.i2c_device as device:
         # The device needs this one-byte "password" to enter read mode
@@ -98,18 +94,130 @@ class STUSB4500:
           device.write(bytes([FTP_CTRL_0, (i & FTP_CUST_SECT) | FTP_CUST_PWR | FTP_CUST_RST_N | FTP_CUST_REQ])) # Load Read Sectors Opcode
           
           buffer = bytearray(1)
+          
           while True:
-            device.write_then_readinto(bytes([FTP_CTRL_0]), buffer)
-            if not buffer[0] & FTP_CUST_REQ:
+            device.write_then_readinto(bytes([FTP_CTRL_0]), buffer) # Wait for execution
+            
+            # This feels like a smelly way to do a "do...while" but
+            # if there's a better way in Python I am all ears!
+            if not buffer[0] & FTP_CUST_REQ: # The FTP_CUST_REQ is cleared by NVM controller when the operation is finished
               break
           
           device.write_then_readinto(bytes([RW_BUFFER]), self.sectors_data, in_start=i * 8, in_end=i * 8 + 8)
       
       self._exit_test_mode()
-
+    
     def _exit_test_mode(self):
       """Exit the "test"/"configuration" mode"""
       
       with self.i2c_device as device:
         device.write(bytes([FTP_CTRL_0, FTP_CUST_RST_N, 0x00])) # Clear Registers
         device.write(bytes([FTP_CUST_PASSWORD_REG, 0x00])) # Clear Password
+    
+    # Note: All the "gets" that take a PDO number are just methods,
+    # because there didn't seem to be a nice way to make them properties
+    
+    def get_voltage(self, pdo=None):
+      """Returns the voltage requested for the PDO number"""
+      
+      if pdo == 1:
+        return 5
+      
+      elif pdo == 2:
+        return self.sectors_data[4 * 8 + 1] * 0.2
+      
+      else: # PDO 3
+        return (((self.sectors_data[4 * 8 + 3] & 0x03) << 8) + self.sectors_data[4 * 8 + 2]) * 0.05
+    
+    def get_current(self, pdo=None):
+      """Returns the current requested for the PDO number"""
+      
+      if pdo == 1:
+        digital_value = (self.sectors_data[3 * 8 + 2] & 0xF0) >> 4
+      
+      elif pdo == 2:
+        digital_value = self.sectors_data[3 * 8 + 4] & 0x0F
+      
+      else: # PDO 3
+        digital_value = (self.sectors_data[3 * 8 + 5] & 0xF0) >> 4
+      
+      if digital_value == 0:
+        return digital_value
+      
+      elif digital_value < 11:
+        return digital_value * 0.25 + 0.25
+      
+      else:
+        return digital_value * 0.50 - 2.50
+    
+    def get_lower_voltage_limit(self, pdo=None):
+      """Returns the under voltage lockout parameter for the PDO number"""
+      
+      if pdo == 1:
+        return 5
+      
+      elif pdo == 2:
+        return (self.sectors_data[3 * 8 + 4] >> 4) + 5
+      
+      else: # PDO 3
+        return (self.sectors_data[3 * 8 + 6] & 0x0F) + 5
+    
+    def get_upper_voltage_limit(self, pdo=None):
+      """Returns the over voltage lockout parameter for the PDO number"""
+      
+      if pdo == 1:
+        return (self.sectors_data[3 * 8 + 3] >> 4) + 5
+      
+      elif pdo == 2:
+        return (self.sectors_data[3 * 8 + 5] & 0x0F) + 5
+      
+      else: # PDO 3
+        return (self.sectors_data[3 * 8 + 6] >> 4) + 5
+    
+    @property
+    def flex_current(self):
+      """A float value to set the current common to all PDOs. This value is only used in the power negotiation if the current value for that PDO is set to 0."""
+      
+      return ((self.sectors_data[4 * 8 + 4] & 0x0F) << 6) + ((self.sectors_data[4 * 8 + 3] & 0xFC) >> 2) / 100
+    
+    @property
+    def pdo_number(self):
+      """The value saved in memory for the highest priority PDO number"""
+      
+      return (self.sectors_data[3 * 8 + 2] & 0x06) >> 1
+    
+    @property
+    def external_power(self):
+      """The value for the SNK_UNCONS_POWER parameter. SNK_UNCONS_POWER is the unconstrained power bit setting in capabilities message sent by the sink. True means an external source of power is available and is sufficient to adequately power the system while charging external devices"""
+      
+      return (self.sectors_data[3 * 8 + 2] & 0x08) >> 3 == 1
+    
+    @property
+    def usb_comm_capable(self):
+      """USB_COMM_CAPABLE refers to USB2.0 or 3.x data communication capability by the sink system. True means that the sink does support data communication."""
+      
+      return self.sectors_data[3 * 8 + 2] & 0x01 == 1
+    
+    @property
+    def config_ok_gpio(self):
+      """Controls the behaviour of the VBUS_EN_SNK, POWER_OK2, and POWER_OK3 pins"""
+      
+      return (self.sectors_data[4 * 8 + 4] & 0x60) >> 5
+    
+    @property
+    def gpio_ctrl(self):
+      """Controls the behaviour setting for the GPIO pin"""
+      
+      return (self.sectors_data[1 * 8 + 0] & 0x30) >> 4
+    
+    @property
+    def power_above_5v_only(self):
+      """Controls whether the output will be enabled only when the source is attached and VBUS voltage is negotiated to PDO2 or PDO3"""
+      
+      return (self.sectors_data[4 * 8 + 6] & 0x08) >> 3 == 1
+    
+    @property
+    def req_src_current(self):
+      """False requests the sink current as operating current in the RDO message. True requests the source current as operating current in the RDO message."""
+      
+      return (self.sectors_data[4 * 8 +  6] & 0x10) >> 4 == 1
