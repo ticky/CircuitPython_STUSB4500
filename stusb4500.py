@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) 2020 Jessica Stokes
+#
+# SPDX-License-Identifier: MIT
 """
 `stusb4500`
 ================================================================================
