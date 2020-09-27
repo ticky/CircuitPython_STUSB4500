@@ -13,7 +13,13 @@ CircuitPython driver for STUSB4500 USB Power Delivery board.
 Implementation Notes
 --------------------
 
-Based on SparkFun's Arduino library, <https://github.com/sparkfun/SparkFun_STUSB4500_Arduino_Library>. Further information and notes from the reference implementation, <https://github.com/usb-c/STUSB4500>. Python library and project structure inspired by <https://github.com/adafruit/Adafruit_CircuitPython_VEML7700> (and Adafruit's other such libraries).
+Based on SparkFun's Arduino library,
+<https://github.com/sparkfun/SparkFun_STUSB4500_Arduino_Library>.
+Further information and notes from the reference implementation,
+<https://github.com/usb-c/STUSB4500>.
+Python library and project structure inspired by
+<https://github.com/adafruit/Adafruit_CircuitPython_VEML7700>
+(and Adafruit's other such libraries).
 
 **Hardware:**
 
@@ -80,147 +86,182 @@ class STUSB4500:
         self._read_parameters()
 
     def _read_parameters(self):
-      """Read current parameters from the device"""
+        """Read current parameters from the device"""
 
-      with self.i2c_device as device:
-        # The device needs this one-byte "password" to enter read mode
-        device.write(bytes([FTP_CUST_PASSWORD_REG, FTP_CUST_PASSWORD]))
+        with self.i2c_device as device:
+            # The device needs this one-byte "password" to enter read mode
+            device.write(bytes([FTP_CUST_PASSWORD_REG, FTP_CUST_PASSWORD]))
 
-        # Then we need to reset the controller
-        device.write(bytes([FTP_CTRL_0, 0x00])) # NVM internal controller reset
-        device.write(bytes([FTP_CTRL_0, (FTP_CUST_PWR | FTP_CUST_RST_N)])) # Set PWR and RST_N bits
+            # Then we need to reset the controller
+            device.write(bytes([FTP_CTRL_0, 0x00])) # NVM internal controller reset
+            device.write(bytes([
+              FTP_CTRL_0, (FTP_CUST_PWR | FTP_CUST_RST_N # Set PWR and RST_N bits
+            )]))
 
-        # Now that we're in read mode, we need to grab the data from the five NVM "sectors"
-        for i in range(5):
-          device.write(bytes([FTP_CTRL_0, (FTP_CUST_PWR | FTP_CUST_RST_N)])) # Set PWR and RST_N bits
-          device.write(bytes([FTP_CTRL_1, (READ & FTP_CUST_OPCODE_MASK)])) # Set Read Sectors Opcode
-          device.write(bytes([FTP_CTRL_0, (i & FTP_CUST_SECT) | FTP_CUST_PWR | FTP_CUST_RST_N | FTP_CUST_REQ])) # Load Read Sectors Opcode
+            # Now that we're in read mode, we need to grab the data from the five NVM "sectors"
+            for i in range(5):
+                device.write(bytes([
+                  FTP_CTRL_0, (FTP_CUST_PWR | FTP_CUST_RST_N) # Set PWR and RST_N bits
+                ]))
+                device.write(bytes([
+                  FTP_CTRL_1, (READ & FTP_CUST_OPCODE_MASK) # Set Read Sectors Opcode
+                ]))
+                device.write(bytes([
+                  FTP_CTRL_0, # Load Read Sectors Opcode
+                  (i & FTP_CUST_SECT) | FTP_CUST_PWR | FTP_CUST_RST_N | FTP_CUST_REQ
+                ]))
 
-          buffer = bytearray(1)
+                buffer = bytearray(1)
 
-          while True:
-            device.write_then_readinto(bytes([FTP_CTRL_0]), buffer) # Wait for execution
+                while True:
+                    device.write_then_readinto(bytes([FTP_CTRL_0]), buffer) # Wait for execution
 
-            # This feels like a smelly way to do a "do...while" but
-            # if there's a better way in Python I am all ears!
-            if not buffer[0] & FTP_CUST_REQ: # The FTP_CUST_REQ is cleared by NVM controller when the operation is finished
-              break
+                    # This feels like a smelly way to do a "do...while" but
+                    # if there's a better way in Python I am all ears!
 
-          device.write_then_readinto(bytes([RW_BUFFER]), self.sectors_data, in_start=i * 8, in_end=i * 8 + 8)
+                    # The FTP_CUST_REQ is cleared by NVM controller when the operation is finished
+                    if not buffer[0] & FTP_CUST_REQ:
+                        break
 
-      self._exit_test_mode()
+                device.write_then_readinto(
+                  bytes([RW_BUFFER]),
+                  self.sectors_data,
+                  in_start=i * 8,
+                  in_end=i * 8 + 8
+                )
+
+        self._exit_test_mode()
 
     def _exit_test_mode(self):
-      """Exit the "test"/"configuration" mode"""
+        """Exit the "test"/"configuration" mode"""
 
-      with self.i2c_device as device:
-        device.write(bytes([FTP_CTRL_0, FTP_CUST_RST_N, 0x00])) # Clear Registers
-        device.write(bytes([FTP_CUST_PASSWORD_REG, 0x00])) # Clear Password
+        with self.i2c_device as device:
+            device.write(bytes([FTP_CTRL_0, FTP_CUST_RST_N, 0x00])) # Clear Registers
+            device.write(bytes([FTP_CUST_PASSWORD_REG, 0x00])) # Clear Password
 
     # Note: All the "gets" that take a PDO number are just methods,
     # because there didn't seem to be a nice way to make them properties
 
     def get_voltage(self, pdo=None):
-      """Returns the voltage requested for the PDO number"""
+        """Returns the voltage requested for the PDO number"""
 
-      if pdo == 1:
-        return 5
+        if pdo == 1:
+            return 5
 
-      elif pdo == 2:
-        return self.sectors_data[4 * 8 + 1] * 0.2
+        if pdo == 2:
+            return self.sectors_data[4 * 8 + 1] * 0.2
 
-      else: # PDO 3
+        # PDO 3
         return (((self.sectors_data[4 * 8 + 3] & 0x03) << 8) + self.sectors_data[4 * 8 + 2]) * 0.05
 
     def get_current(self, pdo=None):
-      """Returns the current requested for the PDO number"""
+        """Returns the current requested for the PDO number"""
 
-      if pdo == 1:
-        digital_value = (self.sectors_data[3 * 8 + 2] & 0xF0) >> 4
+        if pdo == 1:
+            digital_value = (self.sectors_data[3 * 8 + 2] & 0xF0) >> 4
 
-      elif pdo == 2:
-        digital_value = self.sectors_data[3 * 8 + 4] & 0x0F
+        elif pdo == 2:
+            digital_value = self.sectors_data[3 * 8 + 4] & 0x0F
 
-      else: # PDO 3
-        digital_value = (self.sectors_data[3 * 8 + 5] & 0xF0) >> 4
+        else: # PDO 3
+            digital_value = (self.sectors_data[3 * 8 + 5] & 0xF0) >> 4
 
-      if digital_value == 0:
-        return digital_value
+        if digital_value == 0:
+            return digital_value
 
-      elif digital_value < 11:
-        return digital_value * 0.25 + 0.25
+        if digital_value < 11:
+            return digital_value * 0.25 + 0.25
 
-      else:
         return digital_value * 0.50 - 2.50
 
     def get_lower_voltage_limit(self, pdo=None):
-      """Returns the under voltage lockout parameter for the PDO number"""
+        """Returns the under voltage lockout parameter for the PDO number"""
 
-      if pdo == 1:
-        return 5
+        if pdo == 1:
+            return 5
 
-      elif pdo == 2:
-        return (self.sectors_data[3 * 8 + 4] >> 4) + 5
+        if pdo == 2:
+            return (self.sectors_data[3 * 8 + 4] >> 4) + 5
 
-      else: # PDO 3
+        # PDO 3
         return (self.sectors_data[3 * 8 + 6] & 0x0F) + 5
 
     def get_upper_voltage_limit(self, pdo=None):
-      """Returns the over voltage lockout parameter for the PDO number"""
+        """Returns the over voltage lockout parameter for the PDO number"""
 
-      if pdo == 1:
-        return (self.sectors_data[3 * 8 + 3] >> 4) + 5
+        if pdo == 1:
+            return (self.sectors_data[3 * 8 + 3] >> 4) + 5
 
-      elif pdo == 2:
-        return (self.sectors_data[3 * 8 + 5] & 0x0F) + 5
+        if pdo == 2:
+            return (self.sectors_data[3 * 8 + 5] & 0x0F) + 5
 
-      else: # PDO 3
+        # PDO 3
         return (self.sectors_data[3 * 8 + 6] >> 4) + 5
 
     @property
     def flex_current(self):
-      """A float value to set the current common to all PDOs. This value is only used in the power negotiation if the current value for that PDO is set to 0."""
+        """A float value to set the current common to all PDOs.
+        This value is only used in the power negotiation if the current value
+        for that PDO is set to 0.
+        """
 
-      return (((self.sectors_data[4 * 8 + 4] & 0x0F) << 6) + ((self.sectors_data[4 * 8 + 3] & 0xFC) >> 2)) / 100
+        return (
+            ((self.sectors_data[4 * 8 + 4] & 0x0F) << 6)
+            + ((self.sectors_data[4 * 8 + 3] & 0xFC) >> 2)
+        ) / 100
 
     @property
     def pdo_number(self):
-      """The value saved in memory for the highest priority PDO number"""
+        """The value saved in memory for the highest priority PDO number"""
 
-      return (self.sectors_data[3 * 8 + 2] & 0x06) >> 1
+        return (self.sectors_data[3 * 8 + 2] & 0x06) >> 1
 
     @property
     def external_power(self):
-      """The value for the SNK_UNCONS_POWER parameter. SNK_UNCONS_POWER is the unconstrained power bit setting in capabilities message sent by the sink. True means an external source of power is available and is sufficient to adequately power the system while charging external devices"""
+        """The value for the SNK_UNCONS_POWER parameter.
 
-      return (self.sectors_data[3 * 8 + 2] & 0x08) >> 3 == 1
+        SNK_UNCONS_POWER is the unconstrained power bit setting in capabilities
+        message sent by the sink. True means an external source of power is
+        available and is sufficient to adequately power the system while
+        charging external devices
+        """
+
+        return (self.sectors_data[3 * 8 + 2] & 0x08) >> 3 == 1
 
     @property
     def usb_comm_capable(self):
-      """USB_COMM_CAPABLE refers to USB2.0 or 3.x data communication capability by the sink system. True means that the sink does support data communication."""
+        """USB_COMM_CAPABLE refers to USB2.0 or 3.x data communication
+        capability by the sink system. True means that the sink does support
+        data communication.
+        """
 
-      return self.sectors_data[3 * 8 + 2] & 0x01 == 1
+        return self.sectors_data[3 * 8 + 2] & 0x01 == 1
 
     @property
     def config_ok_gpio(self):
-      """Controls the behaviour of the VBUS_EN_SNK, POWER_OK2, and POWER_OK3 pins"""
+        """Controls the behaviour of the VBUS_EN_SNK, POWER_OK2, and POWER_OK3 pins"""
 
-      return (self.sectors_data[4 * 8 + 4] & 0x60) >> 5
+        return (self.sectors_data[4 * 8 + 4] & 0x60) >> 5
 
     @property
     def gpio_ctrl(self):
-      """Controls the behaviour setting for the GPIO pin"""
+        """Controls the behaviour setting for the GPIO pin"""
 
-      return (self.sectors_data[1 * 8 + 0] & 0x30) >> 4
+        return (self.sectors_data[1 * 8 + 0] & 0x30) >> 4
 
     @property
     def power_above_5v_only(self):
-      """Controls whether the output will be enabled only when the source is attached and VBUS voltage is negotiated to PDO2 or PDO3"""
+        """Controls whether the output will be enabled only when the source is
+        attached and VBUS voltage is negotiated to PDO2 or PDO3
+        """
 
-      return (self.sectors_data[4 * 8 + 6] & 0x08) >> 3 == 1
+        return (self.sectors_data[4 * 8 + 6] & 0x08) >> 3 == 1
 
     @property
     def req_src_current(self):
-      """False requests the sink current as operating current in the RDO message. True requests the source current as operating current in the RDO message."""
+        """False requests the sink current as operating current in the RDO
+        message. True requests the source current as operating current in the
+        RDO message.
+        """
 
-      return (self.sectors_data[4 * 8 +  6] & 0x10) >> 4 == 1
+        return (self.sectors_data[4 * 8 +  6] & 0x10) >> 4 == 1
