@@ -26,7 +26,9 @@ This is easily achieved by downloading
 Usage Example
 =============
 
-.. todo:: Add a quick, simple example. It and other examples should live in the examples folder and be included in docs/examples.rst.
+.. literalinclude:: ../examples/stusb4500_simpletest.py
+    :caption: examples/stusb4500_simpletest.py
+    :linenos:
 
 Contributing
 ============
