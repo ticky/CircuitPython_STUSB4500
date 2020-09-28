@@ -50,9 +50,19 @@ class STUSB4500:
     Represents a STUSB4500 I2C device and manages its communication, locking
     and configuration.
 
+    Properties and ``set_*`` methods do not directly write to the device,
+    instead the device's configuration is read when this class is initialised
+    (or by explicitly calling :py:meth:`read_parameters` if changes should be
+    abandoned), and parameters are read and written to that buffer.
+
+    To change settings on the device, you must set the desired configuration
+    using the supplied methods and properties, and once satisfied may call the
+    :py:meth:`write_parameters` method to commit the parameters to the device's
+    non-volatile memory.
+
     :param busio.I2C i2c_bus: The I2C bus the STUSB4500 is connected to.
-    :param int address: The I2C device address. If omitted, the default of ``0x28``
-        is used.
+    :param int address: The I2C device address. If omitted, the default of
+        ``0x28`` is used.
 
     """
 
@@ -60,11 +70,17 @@ class STUSB4500:
 
     def __init__(self, i2c_bus, address=0x28):
         self.i2c_device = i2cdevice.I2CDevice(i2c_bus, address)
-        self._read_parameters()
+        self.read_parameters()
 
-    def _read_parameters(self):
+    def read_parameters(self):
         """
-        Read current parameters from the device
+        Read all the current NVM parameters from the device.
+
+        The :class:`STUSB4500` object will automatically read the current NVM
+        parameters when initialised, however, you may use this function to
+        fetch the currently stored parameters if otherwise needed, for example,
+        to reset any pending changes which have not yet been written to the
+        device.
         """
 
         with self.i2c_device as device:
@@ -109,9 +125,9 @@ class STUSB4500:
                   in_end=i * 8 + 8
                 )
 
-        self._exit_test_mode()
+        self.__exit_test_mode()
 
-    def _exit_test_mode(self):
+    def __exit_test_mode(self):
         """
         Exit the "test"/"configuration" mode
         """
@@ -220,7 +236,7 @@ class STUSB4500:
         """
         A float value to set the current common to all PDOs.
         This value is only used in the power negotiation if the current value
-        for that PDO is set to 0.
+        for that PDO is set to ``0``.
 
         :rtype: float
         """
