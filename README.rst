@@ -72,6 +72,7 @@ Usage Example
     print("GPIO Control: {}".format(pd_board.gpio_ctrl))
     print("Enable Power Only Above 5V: {}".format(pd_board.power_above_5v_only))
     print("Request Source Current: {}".format(pd_board.req_src_current))
+    print("Factory Default: {}".format(pd_board.is_factory_defaults))
 
 Contributing
 ============
