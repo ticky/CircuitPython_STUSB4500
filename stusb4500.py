@@ -298,6 +298,19 @@ class STUSB4500:
             device.write(bytes([FTP_CTRL_0, FTP_CUST_RST_N, 0x00])) # Clear Registers
             device.write(bytes([FTP_CUST_PASSWORD_REG, 0x00])) # Clear Password
 
+    @property
+    def is_factory_defaults(self):
+        """
+        Check whether the current configuration is the same as the factory
+        defaults.
+
+        :rtype: bool
+        """
+
+        return self.sectors_data == DEFAULT_NVM
+
+    # BEGIN Individual setting read/write methods and properties
+
     # Note: All the "gets" that take a PDO number are just methods,
     # because there didn't seem to be a nice way to make them properties
 
@@ -488,14 +501,3 @@ class STUSB4500:
         """
 
         return (self.sectors_data[4 * 8 +  6] & 0x10) >> 4 == 1
-
-    @property
-    def is_factory_defaults(self):
-        """
-        Check whether the current configuration is the same as the factory
-        defaults.
-
-        :rtype: bool
-        """
-
-        return self.sectors_data == DEFAULT_NVM
