@@ -338,8 +338,8 @@ class STUSB4500:
 
         :param decimal voltage: The voltage to request for the PDO, in volts.
             Must be between 5.0V and 20.0V.
-        :param int pdo: PDO number (either ``2``, or ``3``) to retrieve
-            the parameter for.
+        :param int pdo: PDO number (either ``2``, or ``3``) to set the
+            parameter for.
             If omitted, or another value is passed, defaults to ``3``.
             PDO1 is always set to 5.0V.
         """
@@ -402,8 +402,8 @@ class STUSB4500:
 
         :param decimal current: The current to request for the PDO, in amps.
             Must be between 0.0A and 5.0A.
-        :param int pdo: PDO number (either ``1``, ``2``, or ``3``) to retrieve
-            the parameter for.
+        :param int pdo: PDO number (either ``1``, ``2``, or ``3``) to set the
+            parameter for.
             If omitted, or another value is passed, defaults to ``3``.
         """
 
@@ -453,6 +453,32 @@ class STUSB4500:
         # PDO 3
         return (self.sectors_data[3 * 8 + 6] & 0x0F) + 5
 
+    def set_lower_voltage_limit(self, lower_limit, pdo=None):
+        """
+        Sets the desired under voltage lockout parameter for the PDO number
+
+        :param decimal lower_limit: The under voltage limit to request for the
+            PDO, in percent. Must be between 5% and 20%.
+        :param int pdo: PDO number (either ``2``, or ``3``) to set the
+            parameter for.
+            If omitted, or another value is passed, defaults to ``3``.
+            PDO1 is always set to 5%.
+        """
+
+        if lower_limit < 5:
+            lower_limit = 5
+
+        elif lower_limit > 20:
+            lower_limit = 20
+
+        if pdo == 2:
+            self.sectors_data[3 * 8 + 4] &= 0x0F # clear bits 4:7
+            self.sectors_data[3 * 8 + 4] |= (lower_limit - 5) << 4
+
+        elif pdo == 3:
+            self.sectors_data[3 * 8 + 6] &= 0xF0 # clear bits 0:3
+            self.sectors_data[3 * 8 + 6] |= lower_limit - 5
+
     def get_upper_voltage_limit(self, pdo=None):
         """
         Returns the over voltage lockout parameter for the PDO number
@@ -473,6 +499,35 @@ class STUSB4500:
 
         # PDO 3
         return (self.sectors_data[3 * 8 + 6] >> 4) + 5
+
+    def set_upper_voltage_limit(self, upper_limit, pdo=None):
+        """
+        Sets the desired over voltage lockout parameter for the PDO number
+
+        :param decimal upper_limit: The over voltage limit to request for the
+            PDO, in percent. Must be between 5% and 20%.
+        :param int pdo: PDO number (either ``1``, ``2``, or ``3``) to set the
+            parameter for.
+            If omitted, or another value is passed, defaults to ``3``.
+        """
+
+        if upper_limit < 5:
+            upper_limit = 5
+
+        elif upper_limit > 20:
+            upper_limit = 20
+
+        if pdo == 1:
+            self.sectors_data[3 * 8 + 3] &= 0x0F # clear bits 4:7
+            self.sectors_data[3 * 8 + 3] |= (upper_limit - 5) << 4
+
+        elif pdo == 2:
+            self.sectors_data[3 * 8 + 5] &= 0xF0 # clear bits 0:3
+            self.sectors_data[3 * 8 + 5] |= upper_limit - 5
+
+        else:
+            self.sectors_data[3 * 8 + 6] &= 0x0F # clear bits 4:7
+            self.sectors_data[3 * 8 + 6] |= (upper_limit - 5) << 4
 
     @property
     def flex_current(self):
