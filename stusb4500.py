@@ -85,9 +85,9 @@ class STUSB4500:
 
         self.__enter_read_mode()
 
-        with self.i2c_device as device:
-            # Now that we're in read mode, we need to grab the data from the five NVM "sectors"
-            for i in range(5):
+        # Now that we're in read mode, we need to grab the data from the five NVM "sectors"
+        for i in range(5):
+            with self.i2c_device as device:
                 device.write(bytes([
                   FTP_CTRL_0, (FTP_CUST_PWR | FTP_CUST_RST_N) # Set PWR and RST_N bits
                 ]))
@@ -99,18 +99,9 @@ class STUSB4500:
                   (i & FTP_CUST_SECT) | FTP_CUST_PWR | FTP_CUST_RST_N | FTP_CUST_REQ
                 ]))
 
-                buffer = bytearray(1)
+            self.__await_ftp_cust_req() # Wait for execution
 
-                while True:
-                    device.write_then_readinto(bytes([FTP_CTRL_0]), buffer) # Wait for execution
-
-                    # This feels like a smelly way to do a "do...while" but
-                    # if there's a better way in Python I am all ears!
-
-                    # The FTP_CUST_REQ is cleared by NVM controller when the operation is finished
-                    if not buffer[0] & FTP_CUST_REQ:
-                        break
-
+            with self.i2c_device as device:
                 device.write_then_readinto(
                   bytes([RW_BUFFER]),
                   self.sectors_data,
@@ -119,6 +110,26 @@ class STUSB4500:
                 )
 
         self.__exit_test_mode()
+
+    def __await_ftp_cust_req(self):
+        """
+        Waits for the ``FTP_CTRL_0`` register to have ``FTP_CUST_REQ`` cleared,
+        indicating a requested operation has finished.
+
+        Must be called outside an :class:`busio.I2C` lock, or it will freeze.
+        """
+
+        buffer = bytearray(1)
+
+        with self.i2c_device as device:
+            # This feels like a smelly way to do a "do...while" but
+            # if there's a better way in Python I am all ears!
+            while True: # Wait for execution
+                device.write_then_readinto(bytes([FTP_CTRL_0]), buffer)
+
+                # The FTP_CUST_REQ is cleared by NVM controller when the operation is finished
+                if not buffer[0] & FTP_CUST_REQ:
+                    break
 
     def __enter_read_mode(self):
         """
