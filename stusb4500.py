@@ -12,6 +12,14 @@ import adafruit_bus_device.i2c_device as i2cdevice
 __version__ = "0.0.0-auto.0"
 __repo__ = "https://github.com/ticky/CircuitPython_STUSB4500.git"
 
+DEFAULT_NVM = bytes([
+  0x00, 0x00, 0xB0, 0xAA, 0x00, 0x45, 0x00, 0x00,
+  0x10, 0x40, 0x9C, 0x1C, 0xFF, 0x01, 0x3C, 0xDF,
+  0x02, 0x40, 0x0F, 0x00, 0x32, 0x00, 0xFC, 0xF1,
+  0x00, 0x19, 0x56, 0xAF, 0xF5, 0x35, 0x5F, 0x00,
+  0x00, 0x4B, 0x90, 0x21, 0x43, 0x00, 0x40, 0xFB
+])
+
 # NVM Flasher Registers
 FTP_CUST_PASSWORD_REG = const(0x95) # Register address for the password
 FTP_CUST_PASSWORD     =   const(0x47) # The default password value
@@ -108,6 +116,126 @@ class STUSB4500:
                   in_start=i * 8,
                   in_end=i * 8 + 8
                 )
+
+        self.__exit_test_mode()
+
+    def write_parameters(self):
+        """
+        Writes all current parameters to the device.
+        """
+        self.__write_parameters(self.sectors_data)
+
+    def write_parameter_defaults(self):
+        """
+        Writes the factory-default parameters to the device.
+        """
+        self.__write_parameters(DEFAULT_NVM)
+
+    def __write_parameters(self, data):
+        """
+        Writes all parameters from the provided object to the device.
+
+        :param bytes data: The NVM parameter bytes to write.
+            Must be exactly 40 bytes long.
+        """
+
+        # BEGIN Entering Write Mode
+
+        self.__enter_password()
+
+        with self.i2c_device as device:
+            # This register must be NULL for Partial Erase feature
+            device.write(bytes([RW_BUFFER, 0x00]))
+
+        self.__nvm_power_up()
+
+        with self.i2c_device as device:
+            # Note: we always write all the sectors, without regard for where
+            # changes may in fact have occurred, if at all.
+            # If this weren't aimed at use in a memory-constrained environment,
+            # one could almost certainly optimise this further.
+            erase_sectors = SECTOR_0 | SECTOR_1 | SECTOR_2 | SECTOR_3 | SECTOR_4
+
+            # Load 0xF1 to erase all sectors of FTP and Write SER Opcode
+            device.write(bytes([
+              FTP_CTRL_1, # Set Write SER Opcode
+              (((erase_sectors << 3) & FTP_CUST_SER_MASK)
+              | (WRITE_SER & FTP_CUST_OPCODE_MASK))
+            ]))
+
+            device.write(bytes([
+              FTP_CTRL_0, # Load Write SER Opcode
+              FTP_CUST_PWR | FTP_CUST_RST_N | FTP_CUST_REQ
+            ]))
+
+        self.__await_ftp_cust_req() # Wait for execution
+
+        with self.i2c_device as device:
+            device.write(bytes([
+              FTP_CTRL_1, # Set Soft Prog Opcode
+              SOFT_PROG_SECTOR & FTP_CUST_OPCODE_MASK
+            ]))
+
+            device.write(bytes([
+              FTP_CTRL_0, # Load Soft Prog Opcode
+              FTP_CUST_PWR | FTP_CUST_RST_N | FTP_CUST_REQ
+            ]))
+
+        self.__await_ftp_cust_req() # Wait for execution
+
+        with self.i2c_device as device:
+            device.write(bytes([
+              FTP_CTRL_1, # Set Erase Sectors Opcode
+              ERASE_SECTOR & FTP_CUST_OPCODE_MASK
+            ]))
+
+            device.write(bytes([
+              FTP_CTRL_0, # Load Erase Sectors Opcode
+              FTP_CUST_PWR | FTP_CUST_RST_N | FTP_CUST_REQ
+            ]))
+
+        self.__await_ftp_cust_req() # Wait for execution
+
+        # END Entering Write Mode
+
+        # Now that we're in write mode, we need to send the data to the five NVM "sectors"
+        for i in range(5):
+            with self.i2c_device as device:
+                # Write the 64-bit data to be written in the sector
+                device.write(
+                    bytes(RW_BUFFER)
+                    .join(data[i * 8:i * 8 + 8])
+                )
+
+                device.write(bytes([
+                  FTP_CTRL_0, (FTP_CUST_PWR | FTP_CUST_RST_N) # Set PWR and RST_N bits
+                ]))
+
+                # NVM Program Load Register to write with the 64-bit data to be written in sector
+                device.write(bytes([
+                  FTP_CTRL_1, (WRITE_PL & FTP_CUST_OPCODE_MASK) # Set Write to PL Opcode
+                ]))
+
+                device.write(bytes([
+                  FTP_CTRL_0, # Load Write to PL Sectors Opcode
+                  FTP_CUST_PWR | FTP_CUST_RST_N | FTP_CUST_REQ
+                ]))
+
+            self.__await_ftp_cust_req() # Wait for execution
+
+            with self.i2c_device as device:
+                # NVM "Word Program" operation to write the
+                # Program Load Register in the sector to be written
+                device.write(bytes([
+                  FTP_CTRL_1, (PROG_SECTOR & FTP_CUST_OPCODE_MASK) # Set Prog Sectors Opcode
+                ]))
+
+                device.write(bytes([
+                  FTP_CTRL_0, # Load Prog Sectors Opcode
+                  (i & FTP_CUST_SECT) | FTP_CUST_PWR | FTP_CUST_RST_N | FTP_CUST_REQ
+                ]))
+
+            self.__await_ftp_cust_req() # Wait for execution
 
         self.__exit_test_mode()
 
@@ -360,3 +488,14 @@ class STUSB4500:
         """
 
         return (self.sectors_data[4 * 8 +  6] & 0x10) >> 4 == 1
+
+    @property
+    def is_factory_defaults(self):
+        """
+        Check whether the current configuration is the same as the factory
+        defaults.
+
+        :rtype: bool
+        """
+
+        return self.sectors_data == DEFAULT_NVM
