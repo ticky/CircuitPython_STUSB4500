@@ -202,10 +202,7 @@ class STUSB4500:
         for i in range(5):
             with self.i2c_device as device:
                 # Write the 64-bit data to be written in the sector
-                device.write(
-                    bytes(RW_BUFFER)
-                    .join(data[i * 8:i * 8 + 8])
-                )
+                device.write(bytes([RW_BUFFER]) + data[i * 8:i * 8 + 8])
 
                 device.write(bytes([
                   FTP_CTRL_0, (FTP_CUST_PWR | FTP_CUST_RST_N) # Set PWR and RST_N bits
