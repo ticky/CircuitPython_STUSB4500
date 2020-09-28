@@ -301,6 +301,9 @@ class STUSB4500:
         Check whether the current configuration is the same as the factory
         defaults.
 
+        The factory defaults can be applied using the
+        :py:meth:`write_parameter_defaults` method.
+
         :rtype: bool
         """
 
@@ -536,6 +539,8 @@ class STUSB4500:
         This value is only used in the power negotiation if the current value
         for that PDO is set to ``0``.
 
+        Must be between 0A and 5A.
+
         :rtype: float
         """
 
@@ -544,15 +549,44 @@ class STUSB4500:
             + ((self.sectors_data[4 * 8 + 3] & 0xFC) >> 2)
         ) / 100
 
+    @flex_current.setter
+    def flex_current(self, current):
+        if current < 0:
+            current = 0
+
+        elif current > 5:
+            current = 5
+
+        current = int(current * 100)
+
+        self.sectors_data[4 * 8 + 3] &= 0x03 # clear bits 2:6
+        self.sectors_data[4 * 8 + 3] |= (current & 0x3F) << 2 # set bits 2:6
+
+        self.sectors_data[4 * 8 + 4] &= 0xF0 # clear bits 0:3
+        self.sectors_data[4 * 8 + 4] |= (current & 0x3C) >> 6 # set bits 0:3
+
     @property
     def pdo_number(self):
         """
-        The value saved in memory for the highest priority PDO number
+        The value saved in memory for the highest priority PDO number.
+
+        Must be ``1``, ``2``, or ``3``. ``3`` is the default.
+
+        If set to ``2``, PDO3 will be ignored and PDO2 will be negotiated,
+        followed by PDO1. If set to ``1``, only PDO1 will be negotiated.
 
         :rtype: int
         """
 
         return (self.sectors_data[3 * 8 + 2] & 0x06) >> 1
+
+    @pdo_number.setter
+    def pdo_number(self, pdo):
+        if pdo > 3:
+            pdo = 3
+
+        self.sectors_data[3 * 8 + 2] &= 0xF9
+        self.sectors_data[3 * 8 + 2] |= pdo << 1
 
     @property
     def external_power(self):
@@ -569,6 +603,11 @@ class STUSB4500:
 
         return (self.sectors_data[3 * 8 + 2] & 0x08) >> 3 == 1
 
+    @external_power.setter
+    def external_power(self, value):
+        self.sectors_data[3 * 8 + 2] &= 0xF7 # clear bit 3
+        self.sectors_data[3 * 8 + 2] |= int(value) << 3
+
     @property
     def usb_comm_capable(self):
         """
@@ -581,37 +620,100 @@ class STUSB4500:
 
         return self.sectors_data[3 * 8 + 2] & 0x01 == 1
 
+    @usb_comm_capable.setter
+    def usb_comm_capable(self, value):
+        self.sectors_data[3 * 8 + 2] &= 0xFE # clear bit 0
+        self.sectors_data[3 * 8 + 2] |= int(value)
+
     @property
     def config_ok_gpio(self):
         """
         Controls the behaviour of the ``VBUS_EN_SNK``, ``POWER_OK2``,
-        and ``POWER_OK3`` pins
+        and ``POWER_OK3`` pins based on source capabilities.
+
+        Must be one of the following:
+
+        * ``0``: Configuration 1
+            ``VBUS_EN_SNK`` will be pulled low when a source is attached.
+            ``POWER_OK2`` and ``POWER_OK3`` will always stay high.
+        * ``2``: Configuration 2
+            ``VBUS_EN_SNK`` will be pulled low when a source is attached.
+            ``POWER_OK2`` will be pulled low when PDO2 is agreed upon.
+            ``POWER_OK3`` will be pulled low when PDO3 is agreed upon.
+        * ``3``: Configuration 3
+            ``VBUS_EN_SNK`` will be pulled low when a source is attached.
+            ``POWER_OK2`` will be pulled low when the attached source indicates
+            availability of 3.0A at 5V.
+            ``POWER_OK3`` will be pulled low when the attached source indicates
+            availability of 1.5A at 5V.
+
+        ``2`` is the default. Values below ``2`` are treated as ``0``, and
+        values above ``3`` are treated as ``3``.
 
         :rtype: int
         """
 
         return (self.sectors_data[4 * 8 + 4] & 0x60) >> 5
 
+    @config_ok_gpio.setter
+    def config_ok_gpio(self, value):
+        if value < 2:
+            value = 0
+
+        elif value > 3:
+            value = 3
+
+        self.sectors_data[4 * 8 + 4] &= 0x9F # clear bit 3
+        self.sectors_data[4 * 8 + 4] |= value << 5
+
     @property
     def gpio_ctrl(self):
         """
         Controls the behaviour setting for the GPIO pin
+
+        Must be one of the following:
+
+        * ``0``: Software Controlled GPIO
+            The output state is controlled by the value stored in bit 0 of
+            register ``0x2D``. Low when the bit is 1.
+        * ``1``: Error Recovery
+            Hardware fault detection such as over temperature, over voltage on
+            the CC pins, or after a hard reset. Low when a hardware fault is
+            detected.
+        * ``2``: Debug
+            Debug accessory detection. Low when a debug accessory was detected.
+        * ``3``: Sink Power
+            Indicates USB Type-C current capability advertised by the source.
+            Low when source indicates availability of 3.0A at 5V.
 
         :rtype: int
         """
 
         return (self.sectors_data[1 * 8 + 0] & 0x30) >> 4
 
+    @gpio_ctrl.setter
+    def gpio_ctrl(self, value):
+        self.sectors_data[1 * 8 + 0] &= 0xCF # clear bits 4:5
+        self.sectors_data[1 * 8 + 0] |= value << 4
+
     @property
     def power_above_5v_only(self):
         """
-        Controls whether the output will be enabled only when the source is
-        attached and VBUS voltage is negotiated to PDO2 or PDO3
+        When ``True``, output power is only enabled when the source is
+        attached, and the voltage is negotiated for either PDO2 or PDO3.
+
+        ``False`` means output power will be enabled whenever a source is
+        connected.
 
         :rtype: bool
         """
 
         return (self.sectors_data[4 * 8 + 6] & 0x08) >> 3 == 1
+
+    @power_above_5v_only.setter
+    def power_above_5v_only(self, value):
+        self.sectors_data[4 * 8 + 6] &= 0xF7 # clear bit 3
+        self.sectors_data[4 * 8 + 6] |= int(value) << 3
 
     @property
     def req_src_current(self):
@@ -624,3 +726,8 @@ class STUSB4500:
         """
 
         return (self.sectors_data[4 * 8 +  6] & 0x10) >> 4 == 1
+
+    @req_src_current.setter
+    def req_src_current(self, value):
+        self.sectors_data[4 * 8 + 6] &= 0xEF # clear bit 4
+        self.sectors_data[4 * 8 + 6] |= int(value) << 4
