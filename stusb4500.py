@@ -83,16 +83,9 @@ class STUSB4500:
         device.
         """
 
+        self.__enter_read_mode()
+
         with self.i2c_device as device:
-            # The device needs this one-byte "password" to enter read mode
-            device.write(bytes([FTP_CUST_PASSWORD_REG, FTP_CUST_PASSWORD]))
-
-            # Then we need to reset the controller
-            device.write(bytes([FTP_CTRL_0, 0x00])) # NVM internal controller reset
-            device.write(bytes([
-              FTP_CTRL_0, (FTP_CUST_PWR | FTP_CUST_RST_N # Set PWR and RST_N bits
-            )]))
-
             # Now that we're in read mode, we need to grab the data from the five NVM "sectors"
             for i in range(5):
                 device.write(bytes([
@@ -126,6 +119,36 @@ class STUSB4500:
                 )
 
         self.__exit_test_mode()
+
+    def __enter_read_mode(self):
+        """
+        Enters the "read" mode for reading configuration.
+        Must be exited using :py:meth:`__exit_test_mode`.
+        """
+
+        self.__enter_password()
+        self.__nvm_power_up()
+
+    def __enter_password(self):
+        """
+        Enters the default password byte to the password register.
+        """
+
+        with self.i2c_device as device:
+            # The device needs this one-byte "password"
+            device.write(bytes([FTP_CUST_PASSWORD_REG, FTP_CUST_PASSWORD]))
+
+    def __nvm_power_up(self):
+        """
+        NVM Power-up Sequence: After STUSB start-up sequence,
+        the NVM is powered off.
+        """
+
+        with self.i2c_device as device:
+            device.write(bytes([FTP_CTRL_0, 0x00])) # NVM internal controller reset
+            device.write(bytes([
+                FTP_CTRL_0, (FTP_CUST_PWR | FTP_CUST_RST_N) # Set PWR and RST_N bits
+            ]))
 
     def __exit_test_mode(self):
         """
