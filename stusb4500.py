@@ -320,7 +320,7 @@ class STUSB4500:
             If omitted, or another value is passed, defaults to ``3``.
 
         :return: The voltage requested for the PDO, in volts.
-        :rtype: int
+        :rtype: decimal
         """
 
         if pdo == 1:
@@ -332,6 +332,35 @@ class STUSB4500:
         # PDO 3
         return (((self.sectors_data[4 * 8 + 3] & 0x03) << 8) + self.sectors_data[4 * 8 + 2]) * 0.05
 
+    def set_voltage(self, voltage, pdo=None):
+        """
+        Sets the desired voltage for the PDO number
+
+        :param decimal voltage: The voltage to request for the PDO, in volts.
+            Must be between 5.0V and 20.0V.
+        :param int pdo: PDO number (either ``2``, or ``3``) to retrieve
+            the parameter for.
+            If omitted, or another value is passed, defaults to ``3``.
+            PDO1 is always set to 5.0V.
+        """
+
+        # Restrict voltage values to 5~20V
+        if voltage < 5:
+            voltage = 5
+
+        elif voltage > 20:
+            voltage = 20
+
+        if pdo == 2:
+            self.sectors_data[4 * 8 + 1] = int(voltage / 0.2)
+
+        else:
+            # Set voltage, converted to 10 bits
+            voltage = int(voltage / 0.05)
+            self.sectors_data[4 * 8 + 2] = 0xFF & voltage # load bits 0:7
+            self.sectors_data[4 * 8 + 3] &= 0xFC # clear bits 0:1
+            self.sectors_data[4 * 8 + 3] |= voltage >> 8 # load bits 8:9
+
     def get_current(self, pdo=None):
         """
         Returns the current requested for the PDO number
@@ -341,7 +370,7 @@ class STUSB4500:
             If omitted, or another value is passed, defaults to ``3``.
 
         :return: The current requested for the PDO, in amps.
-        :rtype: int
+        :rtype: decimal
         """
 
         if pdo == 1:
@@ -361,6 +390,48 @@ class STUSB4500:
 
         return digital_value * 0.50 - 2.50
 
+    def set_current(self, current, pdo=None):
+        """
+        Sets the desired current for the PDO number
+
+        Current is stored as a 4-bit value, and has different precision
+        depending on the magnitude. Values between 0.5 and 3.0A are set in
+        0.25A steps, while values between 3.0 and 5.0A are in 0.5A steps.
+
+        Input values are automatically rounded to the nearest possible value.
+
+        :param decimal current: The current to request for the PDO, in amps.
+            Must be between 0.0A and 5.0A.
+        :param int pdo: PDO number (either ``1``, ``2``, or ``3``) to retrieve
+            the parameter for.
+            If omitted, or another value is passed, defaults to ``3``.
+        """
+
+        # Convert current to 4-bit value
+        if current < 0.5:
+            current = 0
+
+        elif current <= 3:
+            current = int((4 * current) - 1)
+
+        else:
+            if current > 5:
+                current = 5
+
+            current = int((2 * current) + 5)
+
+        if pdo == 1:
+            self.sectors_data[3 * 8 + 2] &= 0x0F # clear bits 4:7
+            self.sectors_data[3 * 8 + 2] |= current << 4
+
+        elif pdo == 2:
+            self.sectors_data[3 * 8 + 4] &= 0xF0 # clear bits 0:3
+            self.sectors_data[3 * 8 + 4] |= current
+
+        else:
+            self.sectors_data[3 * 8 + 5] &= 0x0F # clear bits 4:7
+            self.sectors_data[3 * 8 + 5] |= current << 4
+
     def get_lower_voltage_limit(self, pdo=None):
         """
         Returns the under voltage lockout parameter for the PDO number
@@ -370,7 +441,7 @@ class STUSB4500:
             If omitted, or another value is passed, defaults to ``3``.
 
         :return: The under voltage limit requested for the PDO, in percent.
-        :rtype: int
+        :rtype: decimal
         """
 
         if pdo == 1:
@@ -391,7 +462,7 @@ class STUSB4500:
             If omitted, or another value is passed, defaults to ``3``.
 
         :return: The over voltage limit requested for the PDO, in percent.
-        :rtype: int
+        :rtype: decimal
         """
 
         if pdo == 1:
