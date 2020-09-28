@@ -128,6 +128,11 @@ class STUSB4500:
     def write_parameter_defaults(self):
         """
         Writes the factory-default parameters to the device.
+
+        Note that once written, the factory default configuration will not
+        automatically be read into the configuration buffer.
+        :py:meth:`read_parameters` must be called after writing the defaults in
+        order to do so.
         """
         self.__write_parameters(DEFAULT_NVM)
 

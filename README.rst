@@ -56,13 +56,13 @@ Usage Example
 
     for i in range(1, 4):
         print(
-          "PDO{}: {}V (+{}%/-{}%), {}A".format(
-              i,
-              pd_board.get_voltage(i),
-              pd_board.get_upper_voltage_limit(i),
-              pd_board.get_lower_voltage_limit(i),
-              pd_board.get_current(i)
-          )
+            "PDO{}: {}V (+{}%/-{}%), {}A".format(
+                i,
+                pd_board.get_voltage(i),
+                pd_board.get_upper_voltage_limit(i),
+                pd_board.get_lower_voltage_limit(i),
+                pd_board.get_current(i)
+            )
         )
 
     print("Flex Current: {}".format(pd_board.flex_current))
