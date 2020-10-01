@@ -28,6 +28,11 @@ Hardware
 
 * `SparkFun STUSB4500 <https://www.sparkfun.com/products/15801>`_
 
+While this was developed for and tested with the SparkFun breakout, it likely works with any STUSB4500-based board which exposes I2C, including:
+
+* `USB C PD Sink by ketszim <https://www.tindie.com/products/ketszim/usb-c-pd-sink-stusb4500/>`_
+* `STMicroelectronics EVAL-SCS001V1 <https://www.st.com/en/evaluation-tools/eval-scs001v1.html>`_
+
 Dependencies
 ============
 This driver depends on:
